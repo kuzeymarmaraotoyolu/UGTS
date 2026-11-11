@@ -1,0 +1,6 @@
+@UGTS_HostAddress = http://localhost:5082
+
+GET {{UGTS_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

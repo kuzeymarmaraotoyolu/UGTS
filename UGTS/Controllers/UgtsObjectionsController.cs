@@ -14,63 +14,47 @@ public class UgtsObjectionsController : ControllerBase
 
     public UgtsObjectionsController(IConfiguration configuration)
     {
-        _connectionString = configuration.GetConnectionString("DefaultConnection");
+        _connectionString = configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
     }
 
     [HttpPost]
-    [Authorize] 
+    [Authorize]
     public IActionResult ReceiveObjection([FromBody] ObjectionNoficationModel model)
     {
-        if (model == null || string.IsNullOrEmpty(model.ObjectionId) || string.IsNullOrEmpty(model.Plate))
-        {
-            return BadRequest(new { message = "Zorunlu alanlardan biri veya birkaçı eksik." });
-        }
-
-        var externalRefNo = $"EXT-{DateTime.UtcNow:yyyy}-{Guid.NewGuid().ToString().Substring(0, 8).ToUpper()}";
+        var externalRefNo = Guid.NewGuid();
 
         try
         {
-            using (var connection = new NpgsqlConnection(_connectionString))
-            {
-                connection.Open();
+            using var connection = new NpgsqlConnection(_connectionString);
+            connection.Open();
 
-                string query = @"INSERT INTO objections (objection_id, ugts_reference_no, transaction_reference_no, customer_name, email, telephone_number, plate, objection_status, objection_date, description) 
-                                 VALUES (@objection_id, @ugts_reference_no, @transaction_reference_no, @customer_name, @email, @telephone_number, @plate, @objection_status, @objection_date, @description)";
+            string query = @"INSERT INTO objections (objection_id, ugts_reference_no, transaction_reference_no, customer_name, email, telephone_number, plate, objection_status, objection_date, description,company_id) 
+                             VALUES (@objection_id, @ugts_reference_no, @transaction_reference_no, @customer_name, @email, @telephone_number, @plate, @objection_status, @objection_date, @description,@company_id)";
 
+            using var cmd = new NpgsqlCommand(query, connection);
 
-                using (var cmd = new NpgsqlCommand(query, connection))
-                {
-                    cmd.Parameters.AddWithValue("@objection_id", NpgsqlDbType.Uuid, Guid.TryParse(model.ObjectionId, out var parsedObjId) ? parsedObjId : Guid.NewGuid());
-                    cmd.Parameters.AddWithValue("@ugts_reference_no", NpgsqlDbType.Uuid, model.UgtsReferenceNo != null && Guid.TryParse(model.UgtsReferenceNo, out var parsedUgtsRef) ? parsedUgtsRef : (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@transaction_reference_no", NpgsqlDbType.Varchar, (object)model.TransactionReferenceNo ?? DBNull.Value);
-                    cmd.Parameters.AddWithValue("@customer_name", NpgsqlDbType.Varchar, (object)model.CustomerName ?? DBNull.Value);
-                    cmd.Parameters.AddWithValue("@email", NpgsqlDbType.Varchar, (object)model.Email ?? DBNull.Value);
-                    cmd.Parameters.AddWithValue("@telephone_number", NpgsqlDbType.Varchar, (object)model.TelephoneNumber ?? DBNull.Value);
-                    cmd.Parameters.AddWithValue("@plate", NpgsqlDbType.Varchar, model.Plate);
-                    cmd.Parameters.AddWithValue("@objection_status", NpgsqlDbType.Varchar, (object)model.ObjectionStatus ?? "RECEIVED");
+            cmd.Parameters.AddWithValue("@objection_id", NpgsqlDbType.Uuid, Guid.Parse(model.ObjectionId));
+            cmd.Parameters.AddWithValue("@ugts_reference_no", NpgsqlDbType.Uuid, Guid.Parse(model.UgtsReferenceNo));
+            cmd.Parameters.AddWithValue("@transaction_reference_no", NpgsqlDbType.Varchar, model.TransactionReferenceNo);
+            cmd.Parameters.AddWithValue("@customer_name", NpgsqlDbType.Varchar, model.CustomerName);
+            cmd.Parameters.AddWithValue("@email", NpgsqlDbType.Varchar, model.Email);
+            cmd.Parameters.AddWithValue("@telephone_number", NpgsqlDbType.Varchar, model.TelephoneNumber);
+            cmd.Parameters.AddWithValue("@plate", NpgsqlDbType.Varchar, model.Plate);
+            cmd.Parameters.AddWithValue("@objection_status", NpgsqlDbType.Varchar, model.ObjectionStatus);
+            cmd.Parameters.AddWithValue("@objection_date", NpgsqlDbType.Timestamp, DateTime.Parse(model.ObjectionDate));
+            cmd.Parameters.AddWithValue("@description", NpgsqlDbType.Varchar, model.Description);
 
-                    DateTime objectionDateVal = DateTime.UtcNow;
+            var clientIdFromToken = User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
+            int companyId = clientIdFromToken == "ugts_client_asia" ? 216 : 212;
 
-                    if (!string.IsNullOrEmpty(model.ObjectionDate) && DateTime.TryParse(model.ObjectionDate, out var parsedDate))
-                    {
-                        objectionDateVal = parsedDate;
-                    }
-                    cmd.Parameters.AddWithValue("@objection_date", NpgsqlDbType.Timestamp, objectionDateVal);
-                    cmd.Parameters.AddWithValue("@description", NpgsqlDbType.Varchar, (object)model.Description ?? DBNull.Value);
-                    cmd.ExecuteNonQuery();
-                }
-            }
+            cmd.Parameters.AddWithValue("@company_id", NpgsqlDbType.Integer, companyId);
+            cmd.ExecuteNonQuery();
         }
         catch (Exception ex)
         {
             return StatusCode(500, new { message = "Veritabanı kayıt hatası oluştu.", error = ex.Message });
         }
 
-        var response = new
-        {
-            externalReferenceNo = externalRefNo
-        };
-
-        return Accepted(response);
+        return Accepted(new { externalReferenceNo = externalRefNo });
     }
 }

@@ -25,15 +25,20 @@ public class AuthController : ControllerBase
         }
 
         var jwtSettings = _configuration.GetSection("JwtSettings");
-        var expectedClientId = jwtSettings["ClientId"] ?? "ugts_client_id";
-        var expectedClientSecret = jwtSettings["ClientSecret"] ?? "ugts_client_secret_xyz";
+        var expectedClientSecret = jwtSettings["ClientSecret"] ?? "KmoUgts_SecuredApi_Secret_#2026!Key*9X";
 
-        if (model.ClientId != expectedClientId || model.ClientSecret != expectedClientSecret)
+        var allowedClients = new[]
+        {
+            jwtSettings["Clients:Europe"] ?? "ugts_client_avrupa",
+            jwtSettings["Clients:Asia"] ?? "ugts_client_asya"
+        };
+
+        if (string.IsNullOrEmpty(model.ClientId) || !allowedClients.Contains(model.ClientId) || model.ClientSecret != expectedClientSecret)
         {
             return Unauthorized(new { message = "Geçersiz Client ID veya Client Secret." });
         }
 
-        var secretKey = jwtSettings["Secret"] ?? "gizli-anahtar-varsayilani-en-az-32-karakter-olmalidir";
+        var secretKey = jwtSettings["Secret"] ?? "x9_#mP$7vL@2pQ!4zX*9wE%1rT&6yU(3sI)5oA#8dF$0gH@2jK!7lZ*4xC%9vB&1nM_k7#2";
         var key = Encoding.ASCII.GetBytes(secretKey);
 
         var tokenDescriptor = new SecurityTokenDescriptor
